@@ -1,0 +1,219 @@
+import fs from 'node:fs/promises'
+import { resolve } from 'node:path'
+import { vol } from 'memfs'
+import { generate } from '@/index'
+import { alova } from '@/plugins'
+
+vi.mock('node:fs')
+vi.mock('node:fs/promises')
+
+describe('alova template', () => {
+  it('should generate {tag} files instead of a single createApis file', async () => {
+    const outputDir = resolve(__dirname, `../mock_output/functional_basic`)
+    vol.mkdirSync(outputDir, { recursive: true })
+    await generate({
+      generator: [
+        {
+          input: resolve(__dirname, '../openapis/openapi_300.yaml'),
+          output: outputDir,
+          plugins: [alova()],
+          type: 'ts',
+        },
+      ],
+    })
+
+    const files = vol.readdirSync(outputDir) as string[]
+    expect(files).toContain('index.ts')
+    expect(files).toContain('components.d.ts')
+    expect(files).toContain('services')
+    expect(files).not.toContain('createApis.ts')
+    const serviceFiles = vol.readdirSync(resolve(outputDir, 'services')) as string[]
+    const tagFiles = serviceFiles.filter(f => f.endsWith('.ts') && !f.endsWith('.d.ts') && f !== 'index.ts')
+    expect(tagFiles.length).toBeGreaterThan(0)
+    const indexContent = vol.readFileSync(resolve(outputDir, 'services/index.ts'), 'utf-8') as string
+    const helperContent = vol.readFileSync(resolve(outputDir, 'helper.ts'), 'utf-8') as string
+    // approach B: the _defaults intermediate layer is no longer generated
+    expect(serviceFiles).not.toContain('_defaults.ts')
+    // services/index.ts is the user-editable area and contains the real setMethodDefaultConfig call
+    expect(indexContent).toContain(`import { setMethodDefaultConfig } from '../helper'`)
+    expect(indexContent).toMatch(/DefaultConfig = setMethodDefaultConfig\('\w+', \{\}\)/)
+    expect(indexContent).not.toMatch(/export \* from '\.\/_defaults'/)
+    // helper provides resolveTagDefaultConfig
+    expect(helperContent).toContain('resolveTagDefaultConfig')
+    // {tag}.ts resolves defaultConfig from '.' via the helper
+    const tagContent = vol.readFileSync(resolve(outputDir, 'services', tagFiles[0]), 'utf-8') as string
+    expect(tagContent).toContain(`import * as defaultConfig from '.'`)
+    expect(tagContent).toContain('resolveTagDefaultConfig(defaultConfig')
+    expect(tagContent).not.toContain('./_defaults')
+    expect(helperContent).toMatch(/\w+: typeof import\('\.\/services\/\w+'\)/)
+    expect(helperContent).toContain('ConfigMap = {')
+  })
+
+  it('should use value import for alovaInstance (not import type)', async () => {
+    const outputDir = resolve(__dirname, `../mock_output/functional_import`)
+    vol.mkdirSync(outputDir, { recursive: true })
+    await generate({
+      generator: [
+        {
+          input: resolve(__dirname, '../openapis/openapi_300.yaml'),
+          output: outputDir,
+          plugins: [alova()],
+          type: 'ts',
+        },
+      ],
+    })
+
+    const files = vol.readdirSync(outputDir) as string[]
+    expect(files).toContain('services')
+    const serviceFiles = vol.readdirSync(resolve(outputDir, 'services')) as string[]
+    const FIXED_SERVICE_FILES = new Set(['index.ts'])
+    const tagFile = serviceFiles.find(f => !FIXED_SERVICE_FILES.has(f) && f.endsWith('.ts') && !f.endsWith('.d.ts'))
+    expect(tagFile).toBeDefined()
+    const content = vol.readFileSync(resolve(outputDir, 'services', tagFile!), 'utf-8') as string
+    expect(content).toMatch(/import\s*\{[^}]*alovaInstance[^}]*\}\s*from/)
+    expect(content).not.toMatch(/import\s+type\s*\{[^}]*alovaInstance/)
+  })
+
+  it('should use {{#each components}} in types file (not {{#schemas}})', async () => {
+    const outputDir = resolve(__dirname, `../mock_output/functional_types`)
+    vol.mkdirSync(outputDir, { recursive: true })
+    await generate({
+      generator: [
+        {
+          input: resolve(__dirname, '../openapis/openapi_300.yaml'),
+          output: outputDir,
+          plugins: [alova()],
+          type: 'ts',
+        },
+      ],
+    })
+
+    const content = vol.readFileSync(resolve(outputDir, 'components.d.ts'), 'utf-8') as string
+    expect(content.trim().length).toBeGreaterThan(0)
+  })
+
+  it('should export named type aliases and let ExtraConfig reference them', async () => {
+    const outputDir = resolve(__dirname, `../mock_output/functional_named_types`)
+    vol.mkdirSync(outputDir, { recursive: true })
+    await generate({
+      generator: [
+        {
+          input: resolve(__dirname, '../openapis/openapi_300.yaml'),
+          output: outputDir,
+          plugins: [alova()],
+          type: 'ts',
+        },
+      ],
+    })
+
+    const content = vol.readFileSync(resolve(outputDir, 'services', 'pet.ts'), 'utf-8') as string
+    const flat = content.replace(/\s+/g, ' ')
+    // 请求参数/请求体/响应类型以具名别名导出，可直接用于 useForm 等场景
+    expect(flat).toContain('export type findPetsByStatusResponse = ComponentTypes.Pet[];')
+    expect(flat).toContain('export type findPetsByStatusParams = {')
+    expect(flat).toContain('export type getPetByIdPathParams = {')
+    expect(flat).toContain('export type updatePetData = ComponentTypes.Pet;')
+    // ExtraConfig 只引用具名别名，解析后的类型与改动前完全一致
+    expect(flat).toContain('export interface findPetsByStatusExtraConfig { params: findPetsByStatusParams; }')
+    expect(flat).toContain('export interface getPetByIdExtraConfig { pathParams: getPetByIdPathParams; }')
+  })
+
+  it('should export named type aliases in module declaration files', async () => {
+    const outputDir = resolve(__dirname, `../mock_output/functional_named_types_mod`)
+    vol.mkdirSync(outputDir, { recursive: true })
+    await generate({
+      generator: [
+        {
+          input: resolve(__dirname, '../openapis/openapi_300.yaml'),
+          output: outputDir,
+          plugins: [alova()],
+          type: 'module',
+        },
+      ],
+    })
+
+    const content = vol.readFileSync(resolve(outputDir, 'services', 'pet.d.ts'), 'utf-8') as string
+    const flat = content.replace(/\s+/g, ' ')
+    expect(flat).toContain('export type findPetsByStatusResponse = ComponentTypes.Pet[];')
+    expect(flat).toContain('export type findPetsByStatusParams = {')
+    expect(flat).toContain('export interface findPetsByStatusExtraConfig { params: findPetsByStatusParams; }')
+    expect(flat).toMatch(/Alova2MethodConfig< ?findPetsByStatusResponse ?>/)
+  })
+
+  describe('snapshot tests', () => {
+    it('should match snapshot for typescript type', async () => {
+      const outputDir = resolve(__dirname, '../mock_output/alova_snapshot_ts')
+      vol.mkdirSync(outputDir, { recursive: true })
+      await generate({
+        generator: [
+          {
+            input: resolve(__dirname, '../openapis/openapi_300.yaml'),
+            output: outputDir,
+            plugins: [alova()],
+            type: 'ts',
+          },
+        ],
+      })
+
+      expect(await fs.readFile(resolve(outputDir, 'index.ts'), 'utf-8')).toMatchSnapshot()
+      expect(await fs.readFile(resolve(outputDir, 'helper.ts'), 'utf-8')).toMatchSnapshot()
+      expect(await fs.readFile(resolve(outputDir, 'typed.ts'), 'utf-8')).toMatchSnapshot()
+      expect(await fs.readFile(resolve(outputDir, 'components.d.ts'), 'utf-8')).toMatchSnapshot()
+      expect(await fs.readFile(resolve(outputDir, 'services/index.ts'), 'utf-8')).toMatchSnapshot()
+      const serviceFiles = (vol.readdirSync(resolve(outputDir, 'services')) as string[]).sort()
+      for (const f of serviceFiles.filter(f => f !== 'index.ts' && f.endsWith('.ts') && !f.endsWith('.d.ts'))) {
+        expect(await fs.readFile(resolve(outputDir, 'services', f), 'utf-8')).toMatchSnapshot()
+      }
+    })
+
+    it('should match snapshot for module type', async () => {
+      const outputDir = resolve(__dirname, '../mock_output/alova_snapshot_mod')
+      vol.mkdirSync(outputDir, { recursive: true })
+      await generate({
+        generator: [
+          {
+            input: resolve(__dirname, '../openapis/openapi_300.yaml'),
+            output: outputDir,
+            plugins: [alova()],
+            type: 'module',
+          },
+        ],
+      })
+
+      expect(await fs.readFile(resolve(outputDir, 'index.js'), 'utf-8')).toMatchSnapshot()
+      expect(await fs.readFile(resolve(outputDir, 'helper.js'), 'utf-8')).toMatchSnapshot()
+      expect(await fs.readFile(resolve(outputDir, 'typed.d.ts'), 'utf-8')).toMatchSnapshot()
+      expect(await fs.readFile(resolve(outputDir, 'components.d.ts'), 'utf-8')).toMatchSnapshot()
+      expect(await fs.readFile(resolve(outputDir, 'services/index.js'), 'utf-8')).toMatchSnapshot()
+      const serviceFiles = (vol.readdirSync(resolve(outputDir, 'services')) as string[]).sort()
+      for (const f of serviceFiles.filter(f => f !== 'index.js' && f.endsWith('.js'))) {
+        expect(await fs.readFile(resolve(outputDir, 'services', f), 'utf-8')).toMatchSnapshot()
+      }
+    })
+
+    it('should match snapshot for commonjs type', async () => {
+      const outputDir = resolve(__dirname, '../mock_output/alova_snapshot_cjs')
+      vol.mkdirSync(outputDir, { recursive: true })
+      await generate({
+        generator: [
+          {
+            input: resolve(__dirname, '../openapis/openapi_300.yaml'),
+            output: outputDir,
+            plugins: [alova()],
+            type: 'commonjs',
+          },
+        ],
+      })
+
+      expect(await fs.readFile(resolve(outputDir, 'index.cjs'), 'utf-8')).toMatchSnapshot()
+      expect(await fs.readFile(resolve(outputDir, 'helper.cjs'), 'utf-8')).toMatchSnapshot()
+      expect(await fs.readFile(resolve(outputDir, 'typed.d.cts'), 'utf-8')).toMatchSnapshot()
+      expect(await fs.readFile(resolve(outputDir, 'components.d.cts'), 'utf-8')).toMatchSnapshot()
+      expect(await fs.readFile(resolve(outputDir, 'services/index.cjs'), 'utf-8')).toMatchSnapshot()
+      const serviceFiles = (vol.readdirSync(resolve(outputDir, 'services')) as string[]).sort()
+      for (const f of serviceFiles.filter(f => f !== 'index.cjs' && f.endsWith('.cjs'))) {
+        expect(await fs.readFile(resolve(outputDir, 'services', f), 'utf-8')).toMatchSnapshot()
+      }
+    })
+  })
+})

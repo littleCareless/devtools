@@ -1,0 +1,410 @@
+# worma
+
+## 1.0.0-beta.0
+
+### Major Changes
+
+- [#195](https://github.com/alovajs/devtools/pull/195) [`0ffe097`](https://github.com/alovajs/devtools/commit/0ffe0976c81baf72cab60365e216f0e02880bd12) Thanks [@JOU-amjs](https://github.com/JOU-amjs)! - Redesign the `payloadModifier` plugin around raw OpenAPI schemas.
+
+  The old implementation round-tripped every field through a private spec DSL (`SchemaObject` → `Schema` → `SchemaObject`), which dropped documentation fields such as `description` whenever a handler returned a node that was not the one it received (the `schema.data` unwrap case being the common one). The plugin now works on raw `SchemaObject` values end to end, so comment preservation is a structural guarantee instead of a best-effort lookup.
+
+  Highlights:
+
+  - **New declarative pipeline** for every config: interface filter (`path` / `tag`) → redirect (`unwrap`) → locate (`match`) → patch (`patch`) → custom (`handler`).
+  - **`unwrap`** replaces the scope root with a nested node (e.g. `unwrap: 'data'`), replacing the old `handler: s => s.data` trick.
+  - **`tag` filter** in addition to `path`, combinable with it.
+  - **`patch`** covers add / delete / modify with one recursive syntax: `null` deletes, a string or array is a `{ type }` shorthand, an object without reserved keys is a `properties` shorthand, and an object with reserved keys is a partial patch.
+  - **`handler`** now takes and returns raw OpenAPI schema objects.
+  - `params` / `pathParams` patches can add brand new parameters.
+
+  Breaking changes:
+
+  - The private spec DSL is gone: `Schema`, `SchemaReference`, `SchemaEnum`, `SchemaOneOf` / `AnyOf` / `AllOf` and the `SchemaOptional` (`{ required, type }`) wrapper are replaced by `SchemaDSL` / `FieldValue` / `FieldPatchObject`, which only appear in type value positions.
+  - `handler` receives a raw `SchemaObject` instead of the DSL representation, and returning `undefined` now deletes the target (previously it did the same, but the input shape changed).
+  - `match` no longer recurses into `oneOf` / `anyOf` / `allOf` branches; it only matches the top-level field names of the current node.
+  - Array element extraction via `unwrap` is not supported, use `handler` instead.
+
+  Migration:
+
+  ```diff
+  - { scope: 'response', handler: s => s.data }
+  + { scope: 'response', unwrap: 'data' }
+
+  - { scope, match: 'id', handler: () => 'string' }
+  + { scope, match: 'id', patch: 'string' }
+
+  - { scope, match: 'f', handler: () => undefined }
+  + { scope, match: 'f', patch: null }
+
+  - { scope, match: 'f', handler: () => ({ required: false, type: 'string' }) }
+  + { scope, match: 'f', patch: { type: 'string', required: false } }
+  ```
+
+- [#195](https://github.com/alovajs/devtools/pull/195) [`0ffe097`](https://github.com/alovajs/devtools/commit/0ffe0976c81baf72cab60365e216f0e02880bd12) Thanks [@JOU-amjs](https://github.com/JOU-amjs)! - remove the `fastapi` platform plugin — it was a strict subset of `swagger` (both resolve `<base>/openapi.json` first). Use `swagger('<base-url>')` for FastAPI projects instead
+
+### Minor Changes
+
+- [#195](https://github.com/alovajs/devtools/pull/195) [`0ffe097`](https://github.com/alovajs/devtools/commit/0ffe0976c81baf72cab60365e216f0e02880bd12) Thanks [@JOU-amjs](https://github.com/JOU-amjs)! - Rename the `aiDoc` plugin's exported `parseEnvFile` to `parseAgentFile` (now falls back to `.wormaagent.local` in the project root when no path is given), and replace the `installSkill` config option with `agent`. The `agent` option accepts a `SkillAgent`, an array of `SkillAgent`, or a comma-separated string; omitting it no longer installs the skill.
+
+- [#195](https://github.com/alovajs/devtools/pull/195) [`0ffe097`](https://github.com/alovajs/devtools/commit/0ffe0976c81baf72cab60365e216f0e02880bd12) Thanks [@JOU-amjs](https://github.com/JOU-amjs)! - Export the request/response types of every generated API.
+
+  The alova/axios/fetch/ky templates only exposed the inline, non-exported `XxxExtraConfig` type, so the query-parameter type of an operation could not be referenced from user code (e.g. when annotating the form parameter of alova's `useForm`, which cannot infer it from the handler return value).
+
+  Every generated API now also emits exported named aliases, prefixed with the generated function name and only when the corresponding parameter exists:
+
+  - `xxxPathParams` – path parameters (`pathParams`)
+  - `xxxParams` – query parameters (`params`, `searchParams` for ky)
+  - `xxxData` – request body (`data`, `body` for fetch, `json` for ky)
+  - `xxxResponse` – response data type
+  - `xxxExtraConfig` – the full config accepted by the generated function
+
+  `xxxExtraConfig` now references these aliases instead of repeating the inline types, so the resolved types are unchanged. The `alova` template also exports `xxxResponse` (previously inlined in the method signature) and reuses it there. The `alova-globals` template is untouched.
+
+  ```ts
+  import { useForm } from "alova/client";
+  import { findPetsByStatus } from "./api/services/pet";
+  import type { findPetsByStatusParams } from "./api/services/pet";
+
+  const { send } = useForm((params: findPetsByStatusParams) =>
+    findPetsByStatus({ params }),
+  );
+  ```
+
+- [#195](https://github.com/alovajs/devtools/pull/195) [`0ffe097`](https://github.com/alovajs/devtools/commit/0ffe0976c81baf72cab60365e216f0e02880bd12) Thanks [@JOU-amjs](https://github.com/JOU-amjs)! - add the `postman` platform plugin, which pulls a Postman collection through the collection transformation endpoint and generates apis from the resulting OpenAPI document
+
+- [#195](https://github.com/alovajs/devtools/pull/195) [`0ffe097`](https://github.com/alovajs/devtools/commit/0ffe0976c81baf72cab60365e216f0e02880bd12) Thanks [@JOU-amjs](https://github.com/JOU-amjs)! - Record **source-document** changes instead of api-level diffs.
+
+  `worma diff` used to compare the generated `Api` objects (method + path + a handful of generated type strings), which hid everything that did not survive into a type string: parameter descriptions leaked into unrelated "modified" fields, operation `summary`/`description` were invisible, and `default` / `format` changes could not be seen at all.
+
+  The baseline is now the **source** OpenAPI document — the one parsed from the `beforeSpecParse` output, captured _before_ the `specParsed` hooks mutate it. That makes the record a faithful log of the source file rather than a lossy projection of it:
+
+  - **Parameter level**: additions, removals and value-definition changes (`type`, `format`, `enum`, `default`, `required`, nullable, nested schemas) are reported per parameter, keyed by `in` + `name`; path-item level parameters are folded into the effective parameter set.
+  - **Request body / responses**: schema changes are reported as pointers (`requestBody.application/json.properties.name.type`, `responses.200.…`), plus added/removed status codes and media types.
+  - **Components**: a change under `#/components/…` is repeated once per affected operation (one change per row), resolved through the reverse-`$ref` index including transitive references; unreferenced components use the component ref as target.
+  - **Document globals**: `info`, `servers`, `tags`, … are reported as `meta` rows.
+  - Every row carries a `kind` (`api` / `param` / `body` / `resp` / `comp` / `meta`) and a coarse `level` (`breaking` / `additive` / `doc`), where documentation-only edits are labelled `doc` instead of being silently dropped.
+
+  Other changes:
+
+  - Snapshots live in `<cache>/.worma-cache/snapshots/<output>.json`, one per generator output (never shared between generators, which are not necessarily generated together). The diff runs **after** a successful generation, so a failed run neither computes nor advances the baseline.
+  - The first run of a project only establishes the baseline, so an existing project no longer reports "everything was added".
+  - `worma generate` prints the recorded change id(s) and points at `worma diff latest`; a run that recorded nothing (the sources did not change) closes silently.
+  - `worma diff` renders a single English table (kind / target / item / change / level); the VS Code extension shows the record id in its toast next to `View Changes`, and its "API Changes" webview renders the same columns as a fully bordered grid with the same colour coding (symbol per op, level per severity, everything else default).
+  - `generate()` accepts a new `onChangeRecorded` option and `listChanges` summaries keep their `added` / `removed` / `modified` fields, so existing callers keep working.
+  - Legacy change records are read through the same row model, so an existing `.worma-cache/changes` history stays browsable.
+
+  Note for consumers reading records programmatically: `ChangeItem` now exposes a flat `changes: SourceChange[]` array instead of the `added` / `removed` / `modified` api lists.
+
+### Patch Changes
+
+- [#195](https://github.com/alovajs/devtools/pull/195) [`0ffe097`](https://github.com/alovajs/devtools/commit/0ffe0976c81baf72cab60365e216f0e02880bd12) Thanks [@JOU-amjs](https://github.com/JOU-amjs)! - fix that error adding tag file when regenerate codes
+
+## 0.4.0
+
+### Minor Changes
+
+- [#193](https://github.com/alovajs/devtools/pull/193) [`f5a2774`](https://github.com/alovajs/devtools/commit/f5a2774facba08bc7f7db53f49bdd0e1e6093b38) Thanks [@JOU-amjs](https://github.com/JOU-amjs)! - Add a `skillName` option to the `aiDoc` plugin to control the name of the generated skill.
+
+  The `skills add` CLI does not support renaming a skill at install time, so the name is taken from the `SKILL.md` frontmatter. `aiDoc` now writes the configured `skillName` into that `name` field before installing the skill into the target coding agent(s).
+  - `aiDoc({ skillName: 'my-skill' })` sets the installed skill name to `my-skill`.
+  - When `skillName` is omitted, the skill keeps its previous default name derived from the API title: `apis-<title>`.
+
+  This is a minor change because it adds a new optional configuration without altering existing behavior.
+
+### Patch Changes
+
+- [#193](https://github.com/alovajs/devtools/pull/193) [`f5a2774`](https://github.com/alovajs/devtools/commit/f5a2774facba08bc7f7db53f49bdd0e1e6093b38) Thanks [@JOU-amjs](https://github.com/JOU-amjs)! - Fix `payloadModifier` so it can convert OpenAPI enums whose `type` is `integer`, and keep documentation through the round-trip.
+
+  The `Schema` layer of the plugin is a TypeScript type representation, so only TS primitives are valid there (`integer` is an OpenAPI type, not a TS type). Previously an enum with `type: "integer"` (e.g. `{ type: "integer", enum: [1, 2, 3] }`) was passed to the handler as-is and then rejected while converting back, throwing `Invalid schema type "integer"` and breaking the whole round-trip.
+
+  Enums are now converted in both directions:
+  - OpenAPI -> Schema: the enum `type` is normalized to its TS counterpart, so `integer` becomes `number`. A numeric enum is always exposed to the handler as `{ enum: [1, 2, 3], type: "number" }`, consistent with how plain primitives are converted.
+  - Schema -> OpenAPI: the TS type is converted back to its OpenAPI counterpart. A numeric enum is written as `integer` only when every value is an integer (`{ enum: [1, 2, 3], type: "integer" }`); if any value is a float (`{ enum: [1.5, 2.5] }`) the type stays `number` so it matches the values. `string` and `boolean` are identical in both representations and need no extra handling.
+  - Untyped enums: when neither the source schema nor the handler declares a type, the OpenAPI type is inferred from the values (all strings -> `string`, all booleans -> `boolean`, all integers -> `integer`, other numbers -> `number`). Mixed or empty values stay untyped.
+  - Nullable enums: an OpenAPI 3.1 type array such as `{ type: ["string", "null"], enum: ["a", "b", null] }` is preserved instead of being dropped, and is replaced only when the handler explicitly returns a type.
+
+  Documentation is also preserved when a schema is rewritten:
+  - Nested object properties and array items now receive the original schema as their conversion base, so fields like `description` are no longer dropped (previously every comment was lost as soon as a handler returned an object or an array).
+  - The obsolete structural fields (`properties`, `required`, `items`, `enum`, `oneOf`, `anyOf`, `allOf`) of the previous type are cleared before the new one is written, so replacing a type no longer leaks stale structure.
+
+  Also update the editor extension install guide to point users to https://open-vsx.org/extension/worma/worma-vscode for manual installation when the extension cannot be found in the VSCode Marketplace.
+
+## 0.3.1
+
+### Patch Changes
+
+- [#191](https://github.com/alovajs/devtools/pull/191) [`0cca9ee`](https://github.com/alovajs/devtools/commit/0cca9ee182d56ad2c6343b80b963bbdbb45247c5) Thanks [@JOU-amjs](https://github.com/JOU-amjs)! - Fix `payloadModifier` plugin so it can convert OpenAPI enums whose `type` is `integer`.
+
+  Previously, an enum with `type: "integer"` (e.g. `{ type: "integer", enum: [1, 2, 3] }`) caused the plugin to throw `Invalid schema type "integer"` during the schema round-trip, because `"integer"` was missing from the set of allowed primitive types. `"integer"` is now a valid `SchemaPrimitive` and is preserved on output.
+  - Add `"integer"` to `SchemaPrimitive` and to the internal `VALID_PRIMITIVES` allowlist in the modifier helper.
+  - Keep integer enums intact when a handler passes them through or returns a new integer enum.
+
+  Also update the editor extension install guide to point users to https://open-vsx.org/extension/worma/worma-vscode for manual installation when the extension cannot be found in the VSCode Marketplace.
+
+## 0.3.0
+
+### Minor Changes
+
+- [#189](https://github.com/alovajs/devtools/pull/189) [`9682066`](https://github.com/alovajs/devtools/commit/96820666b6b68ea71fe40cf87ea406efee19b3d3) Thanks [@JOU-amjs](https://github.com/JOU-amjs)! - Rename the `aiDoc` plugin's exported `parseEnvFile` to `parseAgentFile` (now falls back to `.wormaagent.local` in the project root when no path is given), and replace the `installSkill` config option with `agent`. The `agent` option accepts a `SkillAgent`, an array of `SkillAgent`, or a comma-separated string; omitting it no longer installs the skill.
+
+### Patch Changes
+
+- [#189](https://github.com/alovajs/devtools/pull/189) [`9682066`](https://github.com/alovajs/devtools/commit/96820666b6b68ea71fe40cf87ea406efee19b3d3) Thanks [@JOU-amjs](https://github.com/JOU-amjs)! - fix that error adding tag file when regenerate codes
+
+## 0.2.7
+
+### Patch Changes
+
+- [#187](https://github.com/alovajs/devtools/pull/187) [`0215b15`](https://github.com/alovajs/devtools/commit/0215b15ea0e71aba5bcd39a346af3e6d6c147068) Thanks [@LittleTurtle2333](https://github.com/LittleTurtle2333)! - Isolate schema worker pools by generator output so concurrent OpenAPI documents cannot resolve references against another generator's document.
+
+## 0.2.6
+
+### Patch Changes
+
+- [#184](https://github.com/alovajs/devtools/pull/184) [`0612f00`](https://github.com/alovajs/devtools/commit/0612f001c9df6ead2d54a61743eb04fb209fd66f) Thanks [@JOU-amjs](https://github.com/JOU-amjs)! - fix that error adding tag file when regenerate codes
+
+## 0.2.5
+
+### Patch Changes
+
+- [#175](https://github.com/alovajs/devtools/pull/175) [`47b9962`](https://github.com/alovajs/devtools/commit/47b996219397818b01ca4f3708024c2ace188d74) Thanks [@JOU-amjs](https://github.com/JOU-amjs)! - Fix OpenAPI circular-reference detection by replacing `Object.prototype.hasOwnProperty.call` with the native `Object.hasOwn`, and stabilize unit tests. Update VS Code extension to use `Date.now()` for id generation, fix import ordering, and adjust publish script order.
+
+## 0.2.4
+
+### Patch Changes
+
+- [#177](https://github.com/alovajs/devtools/pull/177) [`923cf21`](https://github.com/alovajs/devtools/commit/923cf21a2c10fb719ab077cb2763aadd29fbb2e8) Thanks [@czhlin](https://github.com/czhlin)! - fix: add explicit unknown generic to axios service template for correct response typing
+
+## 0.2.3
+
+### Patch Changes
+
+- [#174](https://github.com/alovajs/devtools/pull/174) [`02d78cd`](https://github.com/alovajs/devtools/commit/02d78cd10aacd0c04a51e7e0a92de9b0b8b802f8) Thanks [@LittleTurtle2333](https://github.com/LittleTurtle2333)! - fix: generate type-only service imports to preserve tree shaking
+
+## 0.2.2
+
+### Patch Changes
+
+- [#172](https://github.com/alovajs/devtools/pull/172) [`f5252c2`](https://github.com/alovajs/devtools/commit/f5252c2857b75bbf85eb84b1979868411a56bcb9) Thanks [@czhlin](https://github.com/czhlin)! - fix: prevent parser crash when array schema has undefined or missing items
+
+## 0.2.1
+
+### Patch Changes
+
+- [#165](https://github.com/alovajs/devtools/pull/165) [`d006912`](https://github.com/alovajs/devtools/commit/d00691270f56e7080c8fd577c20c89140adf5ab0) Thanks [@JOU-amjs](https://github.com/JOU-amjs)! - correct the usage of pyloadModifier, optimize config hook calling
+
+## 0.2.0
+
+### Minor Changes
+
+- [#162](https://github.com/alovajs/devtools/pull/162) [`e88d4bf`](https://github.com/alovajs/devtools/commit/e88d4bf092fc7b68fec1ea440921205615c9542d) Thanks [@JOU-amjs](https://github.com/JOU-amjs)! - optimize plugin hooks, rename openpai to spec
+
+### Patch Changes
+
+- [#162](https://github.com/alovajs/devtools/pull/162) [`e88d4bf`](https://github.com/alovajs/devtools/commit/e88d4bf092fc7b68fec1ea440921205615c9542d) Thanks [@JOU-amjs](https://github.com/JOU-amjs)! - optimize the usage of plugins
+
+## 0.1.0
+
+### Minor Changes
+
+- [#160](https://github.com/alovajs/devtools/pull/160) [`a13da24`](https://github.com/alovajs/devtools/commit/a13da24104c3c623d0d2ce9373c82415c0f56e7a) Thanks [@JOU-amjs](https://github.com/JOU-amjs)! - split platform plugin to individual plugin
+
+### Patch Changes
+
+- [#158](https://github.com/alovajs/devtools/pull/158) [`0acc04a`](https://github.com/alovajs/devtools/commit/0acc04ad401971e6c08dff095e731639c0a00b3f) Thanks [@JOU-amjs](https://github.com/JOU-amjs)! - remove extra data after generating in workpool
+
+- [#152](https://github.com/alovajs/devtools/pull/152) [`2cfd90b`](https://github.com/alovajs/devtools/commit/2cfd90bf9eff5eb4bd23faa1a49214dce7d414b2) Thanks [@JOU-amjs](https://github.com/JOU-amjs)! - modify api skill name, support multiple agent set
+
+- [#146](https://github.com/alovajs/devtools/pull/146) [`cf924d7`](https://github.com/alovajs/devtools/commit/cf924d7164c64f51f17289ffa2109748f2074e14) Thanks [@JOU-amjs](https://github.com/JOU-amjs)! - Release new beta version of wormajs
+
+## 0.0.2-beta.3
+
+### Patch Changes
+
+- [#158](https://github.com/alovajs/devtools/pull/158) [`0acc04a`](https://github.com/alovajs/devtools/commit/0acc04ad401971e6c08dff095e731639c0a00b3f) Thanks [@JOU-amjs](https://github.com/JOU-amjs)! - remove extra data after generating in workpool
+
+## 0.0.2-beta.2
+
+### Patch Changes
+
+- [#152](https://github.com/alovajs/devtools/pull/152) [`2cfd90b`](https://github.com/alovajs/devtools/commit/2cfd90bf9eff5eb4bd23faa1a49214dce7d414b2) Thanks [@JOU-amjs](https://github.com/JOU-amjs)! - modify api skill name, support multiple agent set
+
+## 0.0.2-beta.1
+
+### Patch Changes
+
+- [#150](https://github.com/alovajs/devtools/pull/150) [`62804c3`](https://github.com/alovajs/devtools/commit/62804c3f865bc64293910b496843b507c44f6af9) Thanks [@JOU-amjs](https://github.com/JOU-amjs)! - Correc temp file name. Which is bundled by esbuild.
+
+## 0.0.2-beta.0
+
+### Patch Changes
+
+- [#146](https://github.com/alovajs/devtools/pull/146) [`cf924d7`](https://github.com/alovajs/devtools/commit/cf924d7164c64f51f17289ffa2109748f2074e14) Thanks [@JOU-amjs](https://github.com/JOU-amjs)! - Release new beta version of wormajs
+
+## 1.5.2
+
+### Patch Changes
+
+- [#145](https://github.com/alovajs/devtools/pull/145) [`20022eb`](https://github.com/alovajs/devtools/commit/20022eb5313b3d7e3ecb2152cd4b74236ad9c241) Thanks [@seepine](https://github.com/seepine)! - fix(wormhole): preserve const discriminators and stop merging discriminated unions
+
+## 1.5.1
+
+### Patch Changes
+
+- [#141](https://github.com/alovajs/devtools/pull/141) [`3b7ad43`](https://github.com/alovajs/devtools/commit/3b7ad434fb273dac674f26640e30a2b5d98aaa33) Thanks [@czhlin](https://github.com/czhlin)! - handle array default items in union and avoid TypeError
+
+## 1.5.0
+
+### Minor Changes
+
+- [#130](https://github.com/alovajs/devtools/pull/130) [`d13414c`](https://github.com/alovajs/devtools/commit/d13414c325c79fb359eaa8708dd4089b2973203b) Thanks [@czhlin](https://github.com/czhlin)! - 1. Extend the `apifox` fetch plugin; align defaults to Apifox’s official exported interface defaults (breaking change). 2. Fix the `payloadModifier` plugin not working for intersection and union types. 3. In the `rename` plugin, add a `value` parameter to `transtransform`.
+
+## 1.4.5
+
+### Patch Changes
+
+- [#121](https://github.com/alovajs/devtools/pull/121) [`0b15b20`](https://github.com/alovajs/devtools/commit/0b15b20a5273fdc57d69ec1229216f4408e684df) Thanks [@czhlin](https://github.com/czhlin)! - fix alova init template
+
+## 1.4.4
+
+### Patch Changes
+
+- [#118](https://github.com/alovajs/devtools/pull/118) [`a5537d1`](https://github.com/alovajs/devtools/commit/a5537d12bbf1888bc2f99ad3316112956455f1cc) Thanks [@czhlin](https://github.com/czhlin)! - fix apifox plugin issue
+
+## 1.4.3
+
+### Patch Changes
+
+- [#116](https://github.com/alovajs/devtools/pull/116) [`034b97e`](https://github.com/alovajs/devtools/commit/034b97eaeb690b1bb231be728de7e51b524d9383) Thanks [@czhlin](https://github.com/czhlin)! - fix additionalProperties true issue
+
+## 1.4.2
+
+### Patch Changes
+
+- [#111](https://github.com/alovajs/devtools/pull/111) [`e10e7a8`](https://github.com/alovajs/devtools/commit/e10e7a873622a38e6948ff70646df905bd442c6c) Thanks [@czhlin](https://github.com/czhlin)! - fix worma not found
+
+## 1.4.1
+
+### Patch Changes
+
+- [#108](https://github.com/alovajs/devtools/pull/108) [`1cb2da2`](https://github.com/alovajs/devtools/commit/1cb2da23294fe408a6edfe7d65a04559a01a2f69) Thanks [@czhlin](https://github.com/czhlin)! - update plugin exports
+
+## 1.4.0
+
+### Minor Changes
+
+- [#101](https://github.com/alovajs/devtools/pull/101) [`998b100`](https://github.com/alovajs/devtools/commit/998b1006b2420ce83da8bd309636568a6511812f) Thanks [@czhlin](https://github.com/czhlin)! - add plugins: apifox、filterApi、importType、rename、tagModifier、payloadModifier
+
+## 1.3.3
+
+### Patch Changes
+
+- [#99](https://github.com/alovajs/devtools/pull/99) [`1451a2a`](https://github.com/alovajs/devtools/commit/1451a2a9053be783b57d2546abe1c71d9562ab7f) Thanks [@czhlin](https://github.com/czhlin)! - Add missing HTTP methods: PATCH, HEAD, OPTIONS
+
+## 1.3.2
+
+### Patch Changes
+
+- [#95](https://github.com/alovajs/devtools/pull/95) [`6eb547b`](https://github.com/alovajs/devtools/commit/6eb547bcf0ba09f55540e443239254d510125065) Thanks [@czhlin](https://github.com/czhlin)! - refactor template files
+
+## 1.3.1
+
+### Patch Changes
+
+- [#93](https://github.com/alovajs/devtools/pull/93) [`9360f9c`](https://github.com/alovajs/devtools/commit/9360f9cc5b118fbf23e122505253d675a6597842) Thanks [@czhlin](https://github.com/czhlin)! - fix makeIdentifier camelCase
+
+## 1.3.0
+
+### Minor Changes
+
+- [#91](https://github.com/alovajs/devtools/pull/91) [`0b7eaff`](https://github.com/alovajs/devtools/commit/0b7eaffa8c11cfd072c608be0171b358f734b143) Thanks [@moecasts](https://github.com/moecasts)! - custom file name case transform
+
+## 1.2.0
+
+### Minor Changes
+
+- [#85](https://github.com/alovajs/devtools/pull/85) [`95d06ba`](https://github.com/alovajs/devtools/commit/95d06ba8d94ab63bbd7ec5cd9723894e8eaec925) Thanks [@czhlin](https://github.com/czhlin)! - Suport defineConfig
+
+## 1.1.4
+
+### Patch Changes
+
+- [#80](https://github.com/alovajs/devtools/pull/80) [`fb41c05`](https://github.com/alovajs/devtools/commit/fb41c05cec81481fd74078db68c391cfa02418a9) Thanks [@wally94](https://github.com/wally94)! - Suport defineConfig
+
+## 1.1.3
+
+### Patch Changes
+
+- [#82](https://github.com/alovajs/devtools/pull/82) [`971af71`](https://github.com/alovajs/devtools/commit/971af71ee95e5a5a99035587df86ccb67ad510d6) Thanks [@czhlin](https://github.com/czhlin)! - Support API proxy object caching
+
+## 1.1.2
+
+### Patch Changes
+
+- [#78](https://github.com/alovajs/devtools/pull/78) [`ea242d6`](https://github.com/alovajs/devtools/commit/ea242d610b13958a69c342a5d3206ceff9ec4310) Thanks [@czhlin](https://github.com/czhlin)! -
+
+## 1.1.1
+
+### Patch Changes
+
+- [#75](https://github.com/alovajs/devtools/pull/75) [`bbf2fec`](https://github.com/alovajs/devtools/commit/bbf2fec7202576a619ae224bdba50f0421410c7b) Thanks [@czhlin](https://github.com/czhlin)! - 1.fix parse remote file error
+  2.back ora 5.4.1
+
+## 1.1.0
+
+### Minor Changes
+
+- [#64](https://github.com/alovajs/devtools/pull/64) [`0baf380`](https://github.com/alovajs/devtools/commit/0baf380ec36c9bfef9e7b7b9b7568beda3e3909b) Thanks [@MeetinaXD](https://github.com/MeetinaXD)! - vscode extension adds primary sidebar
+  worma supports manual mounting of `Apis`
+
+## 1.0.8
+
+### Patch Changes
+
+- [#71](https://github.com/alovajs/devtools/pull/71) [`64848a1`](https://github.com/alovajs/devtools/commit/64848a1275dedc79ddda27c36ddefa0e64301a6c) Thanks [@MeetinaXD](https://github.com/MeetinaXD)! - fix: incorrect transform data type in method without params
+
+## 1.0.7
+
+### Patch Changes
+
+- [#69](https://github.com/alovajs/devtools/pull/69) [`0e293cc`](https://github.com/alovajs/devtools/commit/0e293cc4e5f76099b5287ad1f4a62c94f43482c3) Thanks [@LittleTurtle2333](https://github.com/LittleTurtle2333)! - Fixes issue where invalid responses like {"code": -1, "msg": "URL does not exist"} would generate empty apiDefinitions and global objects.
+
+## 1.0.6
+
+### Patch Changes
+
+- [`23bc0ea`](https://github.com/alovajs/devtools/commit/23bc0eac517f2277f1580c486870d9719edaac5a) - Fixed an error that caused the acquisition function to run abnormally due to multi-variable destructuring
+
+## 1.0.5
+
+### Patch Changes
+
+- [#54](https://github.com/alovajs/devtools/pull/54) [`45e510c`](https://github.com/alovajs/devtools/commit/45e510c5eb8bc242c821070ca4bf993eafa88f39) Thanks [@czhlin](https://github.com/czhlin)!
+  - Add nullable support
+  - Customized circular reference problem handling
+  - tags supports empty arrays
+  - More friendly plug-in error prompts
+
+## 1.0.4
+
+### Patch Changes
+
+- [#51](https://github.com/alovajs/devtools/pull/51) [`6495c77`](https://github.com/alovajs/devtools/commit/6495c77d9885dbf04008c40ddefaa526be88e130) Thanks [@czhlin](https://github.com/czhlin)! - fix defaut values union and intersection issue
+
+## 1.0.3
+
+### Patch Changes
+
+- [#47](https://github.com/alovajs/devtools/pull/47) [`ca3c497`](https://github.com/alovajs/devtools/commit/ca3c497a808ee6ab927942a04d698d765ee6fec7) Thanks [@JOU-amjs](https://github.com/JOU-amjs)! - a random characters as replacement of non-characters $ref
+
+## 1.0.2
+
+### Patch Changes
+
+- [#45](https://github.com/alovajs/devtools/pull/45) [`9f30ec0`](https://github.com/alovajs/devtools/commit/9f30ec0b9abc6095d5f1ea94433daf5fa8da6200) Thanks [@JOU-amjs](https://github.com/JOU-amjs)! - add prettier to dependencies
+
+## 1.0.1
+
+### Patch Changes
+
+- [#39](https://github.com/alovajs/devtools/pull/39) [`986e113`](https://github.com/alovajs/devtools/commit/986e113dbd1fa9f1096c861973b7f704258d9343) Thanks [@JOU-amjs](https://github.com/JOU-amjs)! - initial version

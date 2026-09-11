@@ -1,0 +1,13 @@
+import type { Alova2Method, Alova2MethodConfig, TagDefaultConfig } from '../typed';
+import type * as ComponentTypes from '../components';
+import type * as defaultConfig from './index.js';
+
+type {{{currentTag.tag}}}DefaultConfig = TagDefaultConfig<typeof defaultConfig, '{{{currentTag.tag}}}DefaultConfig'>;
+
+{{> extract-responded}}
+{{#each currentTag.apis}}
+{{> dts-types}}
+{{> api-jsdoc}}
+{{> dts-fn-declare}}
+
+{{/each}}

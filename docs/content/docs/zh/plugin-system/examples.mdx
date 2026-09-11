@@ -1,0 +1,49 @@
+---
+title: 示例：修改函数名/响应类型的插件
+description: 通过实际示例学习插件开发
+---
+
+
+## 示例 1：统一修改函数名前缀
+
+为所有自动生成的 API 函数添加统一前缀。注意 `beforeCodeGenerate` 现在直接修改 `data` 对象，无需返回值：
+
+```javascript
+import { defineConfig } from 'wormajs';
+
+export default defineConfig({
+  generator: [
+    {
+      plugins: [
+        {
+          name: 'prefix-api',
+          beforeCodeGenerate({ data }) {
+            data.apis = data.apis.map(api => ({
+              ...api,
+              name: `api_${api.name}`,
+              responseName: `Api${api.responseName}`,
+            }));
+          },
+        },
+      ],
+    },
+  ],
+});
+```
+
+## 示例 2：为生成的文件添加统一头注释
+
+`beforeFileWrite` 在单个文件写盘前拿到的是该文件的**原始文本内容**，适合做文件级的文本处理（如统一加头注释、替换文本），而不是去改数据结构。下面给所有 `.ts` 文件加上统一的版权头注释：
+
+```javascript
+{
+  name: 'file-banner',
+  beforeFileWrite({ fileName, content }) {
+    if (fileName.endsWith('.ts')) {
+      return `// Copyright 2026 Your Company. All rights reserved.\n\n${content}`;
+    }
+  },
+}
+```
+
+

@@ -1,0 +1,51 @@
+name: pull_request check
+
+# trigger condition: pull_request to any branch
+on:
+  pull_request:
+    paths-ignore:
+      - '.vscode/**'
+      - '**/*.md'
+      - '.github/**'
+      - '.changeset/**'
+  workflow_dispatch:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    if: ${{ !contains(github.event.pull_request.head.ref, 'changeset-release') }}
+    env:
+      # `.npmrc` references `${NPM_TOKEN}`; when the variable is unset pnpm warns
+      # ("Failed to replace env in config") on every install. This job never
+      # publishes, so merely defining it is enough.
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # install pnpm version by `packageManager` in package.json
+      - name: Setup PNPM
+        uses: pnpm/action-setup@v4.0.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+          cache: pnpm
+
+      - name: Install deps
+        run: pnpm install
+
+      - name: Lint check
+        run: pnpm run lint
+
+      - name: Unit tests
+        run: pnpm run test:unit
+
+      - name: E2E tests (via GabrielBB/xvfb-action)
+        uses: GabrielBB/xvfb-action@v1
+        with:
+          run: pnpm run test:e2e

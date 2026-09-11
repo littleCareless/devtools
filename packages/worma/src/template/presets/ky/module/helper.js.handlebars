@@ -1,0 +1,58 @@
+{{> comment}}
+
+export function buildPayload(url, defaultConfig, apiName, config) {
+  const mergedConfig = { ...defaultConfig[apiName], ...config };
+  const pathParams = mergedConfig.pathParams;
+  const resolvedUrl = url.replace(/\{([^}]+)\}/g, (_, key) => {
+    return pathParams?.[key] ?? _;
+  });
+  delete mergedConfig.pathParams;
+  const json = mergedConfig.json;
+  if (Object.prototype.toString.call(json) === '[object Object]' && typeof FormData !== 'undefined') {
+    let hasBlobData = false;
+    const formData = new FormData();
+    for (const key in json) {
+      formData.append(key, json[key]);
+      if (json[key] instanceof Blob) {
+        hasBlobData = true;
+      }
+    }
+    if (hasBlobData) {
+      delete mergedConfig.json;
+      mergedConfig.body = formData;
+    }
+  }
+  return { url: resolvedUrl, mergedConfig };
+}
+
+/**
+ * @typedef {{#raw "{{" }}{{/raw}}
+{{#each tagedApis}}
+ *  {{{tag}}}: typeof import('./services/{{{tag}}}')
+{{/each}}
+ * {{#raw "}}" }}{{/raw}} ServicesMap
+ */
+
+/**
+ * @template {keyof ServicesMap} T
+ * @template {Record<string, (config: any) => any>} [TagedMap = ServicesMap[T]]
+ * @template [ConfigMap = { [K in keyof TagedMap]?: Partial<Parameters<TagedMap[K]>[0]> }]
+ * @param {T} _
+ * @param {ConfigMap} configMap
+ * @returns {ConfigMap}
+ */
+export function setDefaultConfig(_, configMap) {
+  return configMap;
+}
+
+/**
+ * @template {object} C
+ * @template {string} Key
+ * @param {C} defaultConfig
+ * @param {Key} tagName
+ * @returns {C extends { [K in Key]: infer V } ? V : {}}
+ */
+export function resolveTagDefaultConfig(defaultConfig, tagName) {
+  const raw = defaultConfig[tagName];
+  return raw || {};
+}

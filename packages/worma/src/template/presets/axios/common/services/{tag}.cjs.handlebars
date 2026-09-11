@@ -1,0 +1,25 @@
+{{> comment}}
+const { axiosInstance } = require('../index.cjs');
+const { buildPayload, resolveTagDefaultConfig } = require('../helper.cjs');
+const defaultConfig = require('./index.cjs');
+
+const {{{currentTag.tag}}}DefaultConfig = resolveTagDefaultConfig(defaultConfig, '{{{currentTag.tag}}}DefaultConfig');
+
+{{#each currentTag.apis}}
+{{> api-jsdoc}}
+function {{{name}}}(config = {}) {
+  const { url, mergedConfig } = buildPayload('{{{path}}}', {{../currentTag.tag}}DefaultConfig, {{{name}}}.name, config);
+  return axiosInstance({
+    method: '{{method}}',
+    url,
+    ...mergedConfig,{{#if (eq response "Blob")}}
+    responseType: 'blob',{{/if}}
+  }){{#if (eq response "Blob")}}.then(data => data instanceof Blob ? data : new Blob([data])){{/if}};
+}
+
+{{/each}}
+module.exports = {
+  {{#each currentTag.apis}}
+  {{{name}}},
+  {{/each}}
+};

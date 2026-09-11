@@ -1,0 +1,10 @@
+# See https://github.com/actions/labeler
+
+🚨 action:
+  - .github/workflows/**
+
+worma:
+  - packages/worma/**
+
+vscode:
+  - packages/vscode-extension/**

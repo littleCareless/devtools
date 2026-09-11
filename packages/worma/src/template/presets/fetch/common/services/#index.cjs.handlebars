@@ -1,0 +1,10 @@
+{{> comment}}
+const { setDefaultConfig } = require('../helper.cjs');
+
+{{#each tagedApis}}
+const {{{tag}}}DefaultConfig = setDefaultConfig('{{{tag}}}', {});
+{{/each}}
+
+{{#each tagedApis}}
+module.exports.{{{tag}}}DefaultConfig = {{{tag}}}DefaultConfig;
+{{/each}}

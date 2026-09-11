@@ -1,27 +1,67 @@
-# VSCode extension for alova
+# worma - The OpenAPI Generator for human and AI
 
-## features
+![](https://worma.js.org/img/banner.png)
 
-1. Automatically generate request code and response data types, and experience IntelliSense for response in js projects.
-2. Embed API documents in the code to experience the effect of checking and using APIs.
-3. Update APIs regularly and actively notify front-end developers, no longer relying on server-side developers to notify.
+[![npm version](https://img.shields.io/npm/v/wormajs)](https://www.npmjs.com/package/wormajs)
+[![license](https://img.shields.io/github/license/alovajs/devtools)](https://github.com/alovajs/devtools/blob/main/LICENSE)
 
-> [Detailed documentation](https://alova.js.org/tutorial/getting-started/extension-integration).
+> **One OpenAPI spec. Code for developers, knowledge for AI.**
 
-## View API completed information
+worma is a universal OpenAPI code generator that simultaneously produces API calling code, TypeScript types, documentation, and AI Skills — for both humans and coding agents.
 
-You can view the complted API information in the Editor with the IntelliSense feature.
+## Key Features
 
-![](https://alova.js.org/img/vscode-api-doc.png)
+### 🤖 AI Skill Generation
 
-## Quick access to API
+Auto-generate Skills-compliant API documentation that enables coding agents (Cursor, Copilot, Claude Code, Windsurf, etc.) to call your APIs accurately — correct function names, parameters, and import paths every time.
 
-Using the trigger word `a->` to trigger apis quick positioning.
+### 🧩 Four Outputs from One Source
 
-### Search by url
+One OpenAPI spec generates:
 
-![](https://alova.js.org/img/vscode-query-with-url.png)
+- **API calling functions** for developers to import directly
+- **TypeScript type definitions** for type safety
+- **In-editor documentation** via VSCode extension
+- **AI Skills** for coding agents to read
 
-### Search by description
+### 🔌 Multi-Request-Library + Custom Templates
 
-![](https://alova.js.org/img/vscode-query-with-description.png)
+Built-in templates for Alova, Axios, Fetch, and Ky. Switch request libraries with a single config change. Full Handlebars-based custom template support.
+
+### 📝 In-Editor API Docs
+
+Install the VSCode extension to view complete API documentation on hover — parameter tables, response structures, and examples — even in plain JavaScript projects.
+
+## Quick Start
+
+```bash
+# Install worma for your coding agent
+npx skills add alovajs/skills --skill worma-guidelines
+
+# Or install the CLI package directly
+npm i wormajs -D
+npx worma init
+# Edit worma.config.js with your OpenAPI URL, then:
+npx worma gen
+```
+
+## Documentation
+
+- [Full Documentation](https://worma.js.org)
+- [Quick Start Guide](https://worma.js.org/docs/quick-start)
+- [Migration from @alova/wormhole](https://worma.js.org/docs/migration/from-wormhole)
+- [Plugin System](https://worma.js.org/docs/plugin-system)
+
+## Changelog
+
+[Changelog](https://github.com/alovajs/devtools/releases)
+
+## Contributors
+
+<a href="https://github.com/alovajs/devtools/graphs/contributors">
+<img src="https://contrib.rocks/image?repo=alovajs/devtools&max=30&columns=10" />
+</a>
+
+## LICENSE
+
+[MIT](https://en.wikipedia.org/wiki/MIT_License)

@@ -1,0 +1,968 @@
+import { MethodType, RequestBody } from 'alova';
+import { OpenAPIV3_1 } from 'openapi-types';
+import { z } from 'zod/v3';
+
+export interface FetchOptions {
+	headers?: Record<string, string>;
+	/** timeout in milliseconds */
+	timeout?: number;
+	method?: MethodType;
+	data?: RequestBody;
+	params?: Record<string, any>;
+	/** when true, do not throw on non-2xx but still return text; default false */
+	insecure?: boolean;
+}
+declare const zConfigType: z.ZodEnum<[
+	"auto",
+	"ts",
+	"typescript",
+	"module",
+	"commonjs"
+]>;
+declare const zTemplateType: z.ZodEnum<[
+	"typescript",
+	"module",
+	"commonjs"
+]>;
+/**
+ * Find the corresponding input attribute value
+ */
+export type ConfigType = z.infer<typeof zConfigType>;
+/**
+ * template type
+ */
+export type TemplateType = z.infer<typeof zTemplateType>;
+export type MaybePromise<T> = T | Promise<T>;
+/**
+ * Function injected into plugin hooks for reporting plugin-scoped progress.
+ */
+export type ReportProgress = (progress: number, message?: string) => void;
+export interface ConfigHookParams {
+	config: GeneratorConfig;
+	projectPath: string;
+	reportProgress: ReportProgress;
+}
+export interface BeforeSpecParseHookParams {
+	config: Readonly<GeneratorConfig>;
+	/** The raw OpenAPI specification text (JSON or YAML), before it is parsed. */
+	spec: string;
+	projectPath: string;
+	reportProgress: ReportProgress;
+}
+export interface SpecParsedHookParams {
+	config: Readonly<GeneratorConfig>;
+	document: OpenAPIDocument;
+	projectPath: string;
+	reportProgress: ReportProgress;
+}
+export interface BeforeCodeGenerateHookParams {
+	config: Readonly<GeneratorConfig>;
+	data: TemplateData;
+	projectPath: string;
+	reportProgress: ReportProgress;
+}
+export interface BeforeFileWriteHookParams {
+	config: Readonly<GeneratorConfig>;
+	data: TemplateData;
+	filePath: string;
+	content: string;
+	projectPath: string;
+	reportProgress: ReportProgress;
+	/** Template file metadata: tag/api/global */
+	meta: {
+		templateType?: "tag" | "api";
+		tag?: string;
+		api?: string;
+	};
+}
+/** Parameters for the convenience renderTemplate function passed to codeGenerated hook */
+export interface RenderTemplateParams {
+	templatePath: string;
+	type: TemplateType;
+	outputDir: string;
+	data: TemplateData;
+	options?: {
+		changedTags?: Set<string>;
+		beforeFileWrite?: (params: {
+			filePath: string;
+			content: string;
+			meta: {
+				templateType?: "tag" | "api";
+				tag?: string;
+				api?: string;
+			};
+		}) => MaybePromise<string>;
+		writeConcurrency?: number;
+		formatFile?: boolean;
+	};
+}
+export interface CodeGeneratedHookParams {
+	config: Readonly<GeneratorConfig>;
+	data: TemplateData;
+	/** Paths of all generated files (for notification; content is not held) */
+	filePaths: string[];
+	/** Absolute output directory */
+	outputDir: string;
+	projectPath: string;
+	error?: Error;
+	reportProgress: ReportProgress;
+	/** Convenience: render a template to a directory in one call */
+	renderTemplate: (params: RenderTemplateParams) => Promise<{
+		filePaths: string[];
+	}>;
+}
+export interface GetTemplateHookParams {
+	config: Readonly<GeneratorConfig>;
+	projectPath: string;
+	reportProgress: ReportProgress;
+}
+export interface OnHandlebarsCreatedHookParams {
+	hbs: typeof import("handlebars");
+	config: Readonly<GeneratorConfig>;
+	projectPath: string;
+	reportProgress: ReportProgress;
+}
+export interface ApiPlugin {
+	name?: string;
+	/**
+	 * Replaces or manipulates the options object passed to worma.
+	 * Returning null does NOT replacing anything.
+	 */
+	config?: (params: ConfigHookParams) => MaybePromise<GeneratorConfig | undefined | null | void>;
+	/**
+	 * Called after the raw OpenAPI spec text is fetched but before it is parsed.
+	 * Return a (possibly modified) string to replace the spec text that will be
+	 * parsed. Returning nothing keeps the original spec text.
+	 */
+	beforeSpecParse?: (params: BeforeSpecParseHookParams) => MaybePromise<string | undefined | null | void>;
+	/**
+	 * Manipulate the openapi document after parsing.
+	 * Returning null does NOT replacing anything.
+	 */
+	specParsed?: (params: SpecParsedHookParams) => MaybePromise<OpenAPIDocument | undefined | null | void>;
+	/**
+	 * Called before code generation. Mutate `params.data` directly to inject
+	 * configuration data (no longer returns a value).
+	 */
+	beforeCodeGenerate?: (params: BeforeCodeGenerateHookParams) => MaybePromise<void>;
+	/**
+	 * Called right before each file is written to disk.
+	 * Can modify the file content by returning the new content.
+	 */
+	beforeFileWrite?: (params: BeforeFileWriteHookParams) => MaybePromise<string>;
+	/**
+	 * Called after ALL files have been written to disk.
+	 * Used for post-processing e.g. generating additional documentation, displaying notifications.
+	 * The `filePaths` array contains all generated file paths (no content).
+	 */
+	codeGenerated?: (params: CodeGeneratedHookParams) => MaybePromise<void>;
+	/**
+	 * Provide the template path for code generation.
+	 * Multiple plugins can implement this; the last non-nil return value wins.
+	 */
+	getTemplate?: (params: GetTemplateHookParams) => MaybePromise<TemplateConfigResult | undefined | null | void>;
+	/**
+	 * Called when a new Handlebars instance is created for template rendering.
+	 * Use this to register custom helpers or partials on the hbs instance.
+	 */
+	onHandlebarsCreated?: (params: OnHandlebarsCreatedHookParams) => MaybePromise<void>;
+}
+export interface HandleApi {
+	(apiDescriptor: ApiDescriptor): ApiDescriptor | void | undefined | null;
+}
+/**
+ * Template configuration result
+ */
+export interface TemplateConfigResult {
+	/**
+	 * Template path string (relative to project root or absolute path).
+	 * Relative paths are resolved relative to process.cwd()
+	 * This field is required.
+	 */
+	path: string;
+}
+/**
+ * Options for globals template
+ */
+export interface GlobalsTemplateOptions {
+	/**
+	 * Globally exported api name, you can access the automatically generated api globally through this name.
+	 * Default is 'Apis'. Required when multiple generators are configured, and cannot be repeated.
+	 */
+	global?: string;
+	/**
+	 * The host object of global mounting, default is `globalThis`, it means `window` in browser and `global` in nodejs
+	 * @default 'globalThis'
+	 */
+	globalHost?: string;
+	/**
+	 * Whether to use `import` statement to import the type. When this option is set to `true`, the generated apiDefinitions.ts file will use `import` statement to import types instead of ///<reference types="..." />
+	 * @default false
+	 */
+	useImportType?: boolean;
+}
+/**
+ * Options for functional template
+ */
+export interface FunctionalTemplateOptions {
+	/**
+	 * Whether to use `import` statement to import the type. When this option is set to `true`, the generated apiDefinitions.ts file will use `import` statement to import types instead of ///<reference types="..." />
+	 * @default false
+	 */
+	useImportType?: boolean;
+}
+/**
+ * Options for axios/fetch/ky templates
+ */
+export interface RequestLibTemplateOptions {
+	/**
+	 * Whether to use `import` statement to import the type. When this option is set to `true`, the generated apiDefinitions.ts file will use `import` statement to import types instead of ///<reference types="..." />
+	 * @default false
+	 */
+	useImportType?: boolean;
+}
+/**
+ * Performance tuning options for code generation.
+ */
+export interface PerformanceConfig {
+	/** schema→TS worker pool strategy. Default 'auto' (adaptive by API count) */
+	workerPool?: "auto" | number | false;
+	/** Max concurrency for transform phase. Default auto (min(64, max(8, cpus*4))) */
+	transformConcurrency?: number;
+	/** Max parallelism for file writes. Default 32 */
+	writeConcurrency?: number;
+	/**
+	 * Sort the collected component types alphabetically so the output order stays
+	 * stable regardless of worker scheduling. `false` keeps collection order.
+	 * Default true
+	 */
+	deterministicSort?: boolean;
+}
+export interface GeneratorConfig {
+	/**
+	 * Openapi file path, it supports json and yaml file, and network url.
+	 * Can be a single URL string or an array of URLs. When set to an array,
+	 * each URL will be tried in order and the first successful response is returned.
+	 * @requires true
+	 *
+	 * @example
+	 * input: 'http://localhost:3000/openapi.json'
+	 * input: 'openapi/api.json' -> Take the current project as the local address of the relative directory
+	 * input: ['https://primary.com/openapi.json', 'https://fallback.com/openapi.json'] -> Try each URL in order
+	 */
+	input?: string | string[];
+	fetchOptions?: FetchOptions;
+	/**
+	 * A list of type identifiers to exclude from generation.
+	 * Matches against type names parsed from the OpenAPI schema; matched types
+	 * are skipped and referenced directly by their identifier in generated code
+	 * to avoid duplicate or conflicting declarations.
+	 * Use this when you already have hand-written types or types provided by
+	 * frameworks/libraries that should not be generated.
+	 *
+	 * @example
+	 * externalTypes: ['File', 'Blob', 'FormData', 'Pagination']
+	 */
+	externalTypes?: string[];
+	/**
+	 * The output path of the interface file and type file, multiple generators cannot have repeated addresses, otherwise the generated codes will cover each other, which is meaningless.
+	 * @requires true
+	 */
+	output?: string;
+	/**
+	 * Whether to generate documentation comments, default is true.
+	 * Set to false to improve generation performance.
+	 * @default true
+	 */
+	docComment?: boolean;
+	/**
+	 * Specify the media type of the generated response data. After specifying, use this data type to generate the response ts format of the 2xx status code.
+	 * Can be a string or an array of strings for fallback media types.
+	 * @default 'application/json'
+	 */
+	responseMediaType?: string | string[];
+	/**
+	 * Specify the media type of the generated request body data. After specifying, use this data type to generate the ts format of the request body.
+	 * Can be a string or an array of strings for fallback media types.
+	 * @default 'application/json'
+	 */
+	bodyMediaType?: string | string[];
+	/**
+	 * Custom server name for displaying in the sidebar when multiple API docs are configured.
+	 * Default names are server1, server2, server3...
+	 */
+	serverName?: string;
+	/**
+	 * The type of generated code. The optional value is `auto/ts/typescript/module/commonjs`.
+	 * default is `auto`, it means the type of current project will be determined through certain rules.
+	 *
+	 * @param type
+	 * 1. ts/typescript: The same meaning means generating ts type files
+	 * 2. module: generate esModule specification file
+	 * 3. commonjs: means generating commonjs specification file
+	 *
+	 * @default 'auto'
+	 */
+	type?: ConfigType;
+	/**
+	 * When there is no require, it defaults to require, and only nullable takes effect.
+	 */
+	defaultRequire?: boolean;
+	/**
+	 * plugin will be executed before `handleApi`
+	 */
+	plugins?: ApiPlugin[];
+	/**
+	 * Performance tuning options for code generation.
+	 */
+	performance?: PerformanceConfig;
+	/**
+	 * Filter or convert the generated api function and return a new `apiDescriptor` to generate the api.
+	 * When this function is not specified, `apiDescriptor` object is not converted.
+	 * The type of `apiDescriptor` is the same as the api item of openapi file.
+	 *
+	 * @see https://spec.openapis.org/oas/v3.1.0.html#operation-object
+	 *
+	 * @example
+	 * ```js
+	 * // Do not generate the apis that starts with `/user`
+	 * handleApi(apiDescriptor) {
+	 *   if (apiDescriptor.path.startsWith('/user')) {
+	 *     return;
+	 *   }
+	 *   return apiDescriptor;
+	 * }
+	 * ```
+	 *
+	 * ```js
+	 * // modify the api's parameters
+	 * handleApi(apiDescriptor) {
+	 *   apiDescriptor.parameters = (apiDescriptor.parameters || []).filter(
+	 *     param => param.in === 'header' && param.name === 'token'
+	 *   );
+	 *   delete apiDescriptor.requestBody.id;
+	 *   apiDescriptor.url = apiDescriptor.url.replace('/user', '');
+	 *   return apiDescriptor;
+	 * }
+	 * ```
+	 */
+	handleApi?: HandleApi;
+}
+export type OpenAPIDocument = OpenAPIV3_1.Document;
+export type SchemaObject = OpenAPIV3_1.SchemaObject;
+export type Parameter = OpenAPIV3_1.ParameterObject;
+export type OperationObject = OpenAPIV3_1.OperationObject;
+export interface Api {
+	tag: string;
+	method: string;
+	summary: string;
+	path: string;
+	pathParameters: string;
+	queryParameters: string;
+	pathParametersComment?: string;
+	queryParametersComment?: string;
+	responseComment?: string;
+	requestBodyComment?: string;
+	name: string;
+	response: string;
+	requestBody?: string;
+	callingCode?: string;
+}
+export interface ApiDoc {
+	apis: Api[];
+	tag: string;
+}
+export type ApiDescriptor = Omit<OperationObject, "requestBody" | "parameters" | "responses"> & {
+	url: string;
+	method: string;
+	parameters?: Parameter[];
+	refNameMap?: Record<string, string>;
+	requestBody?: SchemaObject;
+	responses?: SchemaObject;
+};
+export interface TemplateData {
+	title: OpenAPIDocument["info"]["title"];
+	openapi: OpenAPIDocument["openapi"];
+	version: OpenAPIDocument["info"]["version"];
+	description: OpenAPIDocument["info"]["description"];
+	contact: OpenAPIDocument["info"]["contact"];
+	/** Framework tag: vue | react | svelte | solid-js | nuxt */
+	framework?: string;
+	defaultKey?: boolean;
+	baseUrl: string;
+	/** Schema/Component definitions */
+	components: string[];
+	/** Names of all generated component schemas (keys of schemasMap) */
+	componentNames: string[];
+	/** All apis array */
+	allApis: Api[];
+	/** Apis grouped by tag */
+	tagedApis: ApiDoc[];
+	type: TemplateType;
+	/** Config passed from template configuration */
+	config: Record<string, any>;
+}
+/**
+ * Creates a plugin factory function with proper typing
+ *
+ * @param plugin - Function that creates a plugin instance
+ * @returns The original plugin function with proper typing
+ *
+ * @example
+ * // Create a custom plugin
+ * const myPlugin = createPlugin((options: MyOptions) => ({
+ *   handleApi: (apiDescriptor) => {
+ *     // Plugin implementation
+ *     return apiDescriptor;
+ *   }
+ * }));
+ *
+ * // Use the plugin
+ * generate({
+ *   generator: [{
+ *     // ...
+ *     plugins: [myPlugin({ key: 'value' })]
+ *   }]
+ * });
+ */
+export declare function createPlugin<T extends any[]>(plugin: (...args: T) => ApiPlugin): (...args: T) => ApiPlugin;
+/**
+ * Coding agents that the generated skill can be installed into.
+ *
+ * The `skills` package (`https://www.npmjs.com/package/skills`) is CLI-only and
+ * ships no TypeScript types, so this union mirrors the agent names it supports
+ * (its documented "supported agents" list). The transitive `@vercel/detect-agent`
+ * package does export a `KnownAgentNames` type, but it only covers a small subset
+ * of agents (e.g. it is missing `claude-code` and `windsurf`), so it cannot be
+ * reused directly here.
+ */
+export type SkillAgent = "aider-desk" | "amp" | "antigravity" | "antigravity-cli" | "astrbot" | "augment" | "autohand-code" | "bob" | "claude-code" | "cline" | "codearts-agent" | "codebuddy" | "codemaker" | "codestudio" | "codex" | "command-code" | "continue" | "cortex" | "crush" | "cursor" | "deepagents" | "devin" | "dexto" | "droid" | "eve" | "firebender" | "forgecode" | "gemini-cli" | "github-copilot" | "goose" | "hermes-agent" | "iflow-cli" | "inference-sh" | "jazz" | "junie" | "kilo" | "kiro-cli" | "kimi-code-cli" | "kode" | "lingma" | "loaf" | "mcpjam" | "mistral-vibe" | "moxby" | "mux" | "ona" | "opencode" | "openhands" | "openclaw" | "pi" | "pochi" | "promptscript" | "qoder" | "qoder-cn" | "qwen-code" | "reasonix" | "replit" | "rovodev" | "roo" | "tabnine-cli" | "terramind" | "tinycloud" | "trae" | "trae-cn" | "universal" | "warp" | "windsurf" | "zed" | "zencoder" | "zenflow" | "neovate" | "adal";
+export interface AiDocConfig {
+	template?: string;
+	outputDir?: string;
+	/**
+	 * Name written into the generated skill's `SKILL.md` frontmatter. This is the
+	 * name the skill is installed/referenced under. When omitted, the skill keeps
+	 * its default name derived from the API title: `apis-<title>`.
+	 */
+	skillName?: string;
+	/**
+	 * Which coding agent(s) to install the generated skill into.
+	 * - omitted: do NOT install the skill.
+	 * - `SkillAgent` / `SkillAgent[]`: install to the given agent(s) directly.
+	 * - `string`: comma (English or Chinese) separated agent names, used directly
+	 *   as the target agent(s), e.g. `"cursor"` or `"cursor, claude-code"`.
+	 *   This is handy when the agent list comes from a config file parsed via
+	 *   `parseAgentFile`, e.g. `aiDoc({ agent: parseAgentFile('.myrc').agent })`.
+	 */
+	agent?: SkillAgent | (SkillAgent | (string & {}))[] | (string & {});
+}
+export declare function aiDoc(config?: AiDocConfig): ApiPlugin;
+/**
+ * Parse an agent string into a deduplicated list of trimmed agent names.
+ *
+ * Agents may be separated by either an English comma (`,`) or a Chinese
+ * comma (`，`), with any amount of whitespace (including none) allowed on
+ * either side. Empty entries are ignored.
+ */
+export declare function parseAgentList(raw: string): string[];
+/**
+ * Parse a `key=value` configuration file (same format as an environment file).
+ *
+ * Lines starting with `#` are treated as comments and ignored; blank lines and
+ * lines without `=` are skipped. Surrounding single/double quotes around values
+ * are stripped. Returns a map of keys to their (string) values.
+ *
+ * When `filePath` is omitted, the file is read from `.wormaagent.local` in the
+ * current working directory (project root).
+ *
+ * This makes it easy to keep the target coding agent(s) in a config file and
+ * feed them into the `agent` option:
+ *
+ * @example
+ * ```ts
+ * // .wormaagent.local  ->  agent=cursor, claude-code
+ * const cfg = parseAgentFile() // reads ./.wormaagent.local by default
+ * aiDoc({ agent: cfg.agent })
+ * ```
+ */
+export declare function parseAgentFile(filePath?: string): Record<string, string>;
+export type ScopeType = "ALL" | "SELECTED_ENDPOINTS" | "SELECTED_TAGS" | "SELECTED_FOLDERS";
+export interface APIFoxBody {
+	scope?: {
+		type?: ScopeType;
+		selectedEndpointIds?: number[];
+		selectedTags?: string[];
+		selectedFolderIds?: number[];
+		excludedByTags?: string[];
+	};
+	options?: {
+		includeApifoxExtensionProperties?: boolean;
+		addFoldersToTags?: boolean;
+	};
+	oasVersion?: "2.0" | "3.0" | "3.1";
+	exportFormat?: "JSON" | "YAML";
+	environmentIds?: number[];
+	branchId?: number;
+	moduleId?: number;
+}
+export interface ApifoxOptions extends Pick<APIFoxBody, "oasVersion" | "exportFormat" | "environmentIds" | "branchId" | "moduleId">, Pick<NonNullable<APIFoxBody["options"]>, "includeApifoxExtensionProperties" | "addFoldersToTags"> {
+	projectId: string;
+	apifoxToken: string;
+	locale?: string;
+	apifoxVersion?: string;
+	scopeType?: ScopeType;
+	selectedEndpointIds?: number[];
+	selectedTags?: string[];
+	selectedFolderIds?: number[];
+	excludedByTags?: string[];
+}
+export declare function apifox({ projectId, locale, apifoxVersion, scopeType, selectedEndpointIds, selectedTags, selectedFolderIds, excludedByTags, apifoxToken, oasVersion, exportFormat, includeApifoxExtensionProperties, addFoldersToTags, environmentIds, branchId, moduleId, }: ApifoxOptions): ApiPlugin;
+/**
+ * Filter configuration interface
+ */
+export interface FilterApiConfig {
+	/**
+	 * Target scope for filtering, defaults to 'url'
+	 */
+	scope?: "url" | "tag";
+	/**
+	 * Include rule:
+	 * - string: target contains this string
+	 * - RegExp: target matches this pattern
+	 * - function: custom matching logic
+	 */
+	include?: string | RegExp | ((key: string) => boolean);
+	/**
+	 * Exclude rule:
+	 * - string: target contains this string
+	 * - RegExp: target matches this pattern
+	 * - function: custom matching logic
+	 */
+	exclude?: string | RegExp | ((key: string) => boolean);
+}
+/**
+ * Main processing function for filtering API descriptors
+ * @param apiDescriptor API descriptor
+ * @param configs Configuration array
+ * @returns Filtered API descriptor, or null if filtered out
+ */
+export declare function filterApiDescriptor(apiDescriptor: ApiDescriptor, configs: FilterApiConfig[]): ApiDescriptor | null;
+/**
+ * Creates a plugin for filtering APIs
+ *
+ * @param config Filter configuration, can be a single config or array of configs
+ * @returns API plugin instance
+ *
+ * @example
+ * ```ts
+ * // Only include URLs containing 'user'
+ * const userOnlyFilter = apiFilter({
+ *   include: 'user'
+ * });
+ *
+ * // Exclude tags containing 'internal'
+ * const noInternalFilter = apiFilter({
+ *   scope: 'tag',
+ *   exclude: 'internal'
+ * });
+ *
+ * // Multi-condition filtering (union)
+ * const multiFilter = apiFilter([
+ *   { include: 'user' },
+ *   { include: 'admin' }
+ * ]);
+ * ```
+ */
+export declare function apiFilter(config: FilterApiConfig | FilterApiConfig[]): ApiPlugin;
+export interface ImportTypeOptions {
+	imports: Record<string, string[]>;
+	files?: string[];
+}
+export declare function importType(imports: Record<string, string[]>, options?: {
+	files?: string[];
+}): ApiPlugin;
+/**
+ * The part of the API the modification applies to.
+ * - `params` — query parameters
+ * - `pathParams` — path parameters
+ * - `data` — request body
+ * - `response` — response body
+ */
+export type ModifierScope = "params" | "pathParams" | "data" | "response";
+/**
+ * A matching rule.
+ * - string: the value contains this substring
+ * - RegExp: the value matches this pattern
+ * - function: a predicate receiving the value
+ */
+export type Matcher = string | RegExp | ((value: string) => boolean);
+/**
+ * Type expressions understood by the plugin. TS-only types (`undefined`, `unknown`,
+ * `any`, `never`) are valid and are written through to the schema as-is.
+ */
+export type SchemaPrimitive = "number" | "string" | "boolean" | "undefined" | "null" | "unknown" | "any" | "never";
+/**
+ * The spec DSL. It only ever *describes a type*, therefore it always appears in a type
+ * value position (`FieldPatchObject.type`, `FieldPatchObject.items`, union members, ...).
+ */
+export type SchemaDSL = SchemaPrimitive
+/** `['string']` = `string[]`, `['string', 'number']` = the tuple `[string, number]` */
+ | SchemaDSL[] | {
+	oneOf: SchemaDSL[];
+} | {
+	anyOf: SchemaDSL[];
+} | {
+	allOf: SchemaDSL[];
+} | {
+	enum: Array<string | number | boolean | null>;
+	type?: SchemaPrimitive;
+}
+/** object shorthand: every listed field is required */
+ | {
+	[field: string]: SchemaDSL;
+};
+/**
+ * OpenAPI keywords usable inside a patch object. Every other key is documented by the
+ * plugin itself, so a patch object holding one of these keys is a partial patch of the
+ * target while an object holding none of them is a shorthand for `properties`.
+ */
+export interface FieldPatchObject {
+	/** Replaces the type: type-family keys are cleared, documentation keys are kept. */
+	type?: SchemaDSL;
+	/** Field-level requiredness, translated to the parent `required` array (or to `ParameterObject.required`). */
+	required?: boolean;
+	description?: string;
+	/** Explicit field-table patch, also the escape hatch when a field is named like a reserved key. */
+	properties?: Record<string, FieldValue>;
+	items?: SchemaDSL;
+	enum?: Array<string | number | boolean | null>;
+	oneOf?: SchemaDSL[];
+	anyOf?: SchemaDSL[];
+	allOf?: SchemaDSL[];
+	format?: string;
+	example?: unknown;
+	default?: unknown;
+	deprecated?: boolean;
+	nullable?: boolean;
+	title?: string;
+}
+/**
+ * A field table: an object without reserved keys, read as a patch of the field table of
+ * the target. Every value follows the same rules as `FieldValue`, recursively.
+ */
+export interface FieldTable {
+	[field: string]: FieldValue;
+}
+/**
+ * A patch value. The same syntax is used for the top level `patch` and for every value
+ * inside a field table, so the rules below apply recursively.
+ *
+ * | form | meaning |
+ * | --- | --- |
+ * | `null` | delete the target |
+ * | string / array | shorthand for `{ type: value }`, documentation keys are kept |
+ * | object without reserved keys | field table, merged into the target field table |
+ * | object with reserved keys | partial patch of the target itself |
+ */
+export type FieldValue = null | SchemaDSL | FieldPatchObject | FieldTable;
+export interface ModifierConfig {
+	/** The scope the config applies to. */
+	scope: ModifierScope;
+	/** URL filter. Omitted = every API. Multiple rules are ORed, `path` and `tag` are ANDed. */
+	path?: Matcher | Matcher[];
+	/** Tag filter: any tag of the API hitting any rule makes the config apply. */
+	tag?: Matcher | Matcher[];
+	/** Replaces the scope root with a nested node, navigating along `properties` only. */
+	unwrap?: string;
+	/** Locator. Omitted = the root itself, otherwise every matching top-level field. */
+	match?: Matcher;
+	/** Declarative patch (add / delete / modify). Runs before `handler`. */
+	patch?: FieldValue;
+	/**
+	 * Escape hatch taking and returning raw OpenAPI schema objects.
+	 * @param schema the located raw schema
+	 * @param key the located field name, `undefined` when the root itself is located
+	 * @returns the replacement schema, or `null` / `undefined` to delete the target
+	 */
+	handler?: (schema: SchemaObject, key?: string) => SchemaObject | null | undefined;
+}
+export type PayloadModifierConfig = ModifierConfig;
+/**
+ * Flexibly adds, deletes and modifies the payload of your APIs.
+ *
+ * Every config runs the same fixed pipeline: interface filter (`path` / `tag`) → redirect
+ * (`unwrap`) → locate (`match`) → patch (`patch`) → custom (`handler`). Configs are applied
+ * in array order, so a later config sees the result of the previous ones.
+ *
+ * @example
+ * ```ts
+ * payloadModifier([
+ *   { scope: 'response', unwrap: 'data' },
+ *   { scope: 'response', match: /[Ii]d$/, patch: 'string' },
+ *   { scope: 'data', path: '/planPoint', patch: { operatorId: { type: 'string', required: true } } },
+ * ])
+ * ```
+ */
+export declare function payloadModifier(configs: PayloadModifierConfig[]): ApiPlugin;
+/**
+ * Knife4j platform plugin.
+ *
+ * Pass the base URL of your Knife4j instance; the plugin will try the OAS3
+ * endpoint (springdoc) first, then the Swagger2 endpoint (springfox), then the
+ * bare base URL.
+ *
+ * @param input - base URL string, or an array of base URLs
+ *
+ * @example
+ * ```ts
+ * plugins: [knife4j('https://openapi3.demo.knife4jnext.com'), alovaGlobals()]
+ * ```
+ */
+export declare const knife4j: (input: string | string[]) => ApiPlugin;
+/**
+ * Swagger platform plugin.
+ *
+ * Pass the base URL of your Swagger UI / server; the plugin will try several
+ * common OpenAPI document endpoints (OAS3 first, then Swagger2, then the bare
+ * base URL) and let the framework pick the first one that responds.
+ *
+ * @param input - base URL string, or an array of base URLs
+ *
+ * @example
+ * ```ts
+ * import { swagger, alovaGlobals } from 'wormajs/plugin';
+ *
+ * defineConfig({
+ *   generator: [{
+ *     plugins: [swagger('https://petstore3.swagger.io'), alovaGlobals()],
+ *     output: './src/api',
+ *   }]
+ * });
+ * ```
+ */
+export declare const swagger: (input: string | string[]) => ApiPlugin;
+export interface YapiOptions {
+	/** YApi server base address, e.g. `https://yapi.xxx.com` */
+	url: string;
+	/** Project ID, required, used to build the export address */
+	pid: string | number;
+	/** OpenAPI type, defaults to `OpenAPIV2` */
+	type?: string;
+	/** API status, defaults to `all` */
+	status?: string;
+	/** Whether to include wiki, defaults to `true` */
+	isWiki?: boolean;
+	/** Login cookie. Can also be passed via fetchOptions.headers.cookie */
+	cookie?: string;
+	/** Extra fetch timeout in milliseconds */
+	timeout?: number;
+}
+/**
+ * YApi platform plugin.
+ *
+ * YApi projects are private, so the OpenAPI document must be exported through
+ * YApi's own export endpoint, authenticated with your login cookie. The plugin
+ * builds the export URL from the server base URL (`url`) plus the required
+ * `pid` and the optional `type` / `status` / `isWiki` query params (which
+ * default to `OpenAPIV2`, `all`, and `true` respectively).
+ *
+ * `url`, `pid` and `cookie` are required — the plugin throws a clear error when
+ * any is missing.
+ *
+ * @param options - `{ url, pid, cookie?, type?, status?, isWiki?, timeout? }`
+ *
+ * @example
+ * ```ts
+ * import { yapi, alovaGlobals } from 'wormajs/plugin';
+ *
+ * defineConfig({
+ *   generator: [{
+ *     plugins: [
+ *       yapi({
+ *         url: 'https://yapi.xxx.com',
+ *         pid: 123,
+ *         cookie: '_yapi_token=xxx; _yapi_uid=yyy',
+ *       }),
+ *       alovaGlobals(),
+ *     ],
+ *     output: './src/api',
+ *   }]
+ * });
+ * ```
+ */
+export declare function yapi(options: YapiOptions): ApiPlugin;
+export interface PostmanOptions {
+	/** Postman API Key, generated from Postman → Settings → API keys */
+	apiKey: string;
+	/** The uid of the Postman collection */
+	collectionId: string;
+}
+/**
+ * Unwraps the OpenAPI definition returned by the Postman collection
+ * transformation endpoint, which responds with `{ output: "<stringified spec>" }`
+ * instead of the specification itself.
+ *
+ * The response is parsed exactly once. Anything that is not a transformation
+ * envelope (an error payload, an HTML page, a malformed body, …) throws instead
+ * of being silently passed through, so the real problem surfaces immediately.
+ * The unwrapped spec is then validated by the generator's parser, like any other
+ * input — this function does not re-parse or validate it.
+ */
+export declare function unwrapTransformationOutput(spec: string): string;
+/**
+ * Postman platform plugin.
+ *
+ * Postman collections are not OpenAPI documents, so the plugin points `input` to
+ * the collection transformation endpoint, which converts the collection into an
+ * OpenAPI definition:
+ *
+ * ```
+ * https://api.getpostman.com/collections/<collectionId>/transformations
+ * ```
+ *
+ * The `x-api-key` header is injected through `fetchOptions`. The endpoint responds
+ * with `{ output: "<spec>" }`, so the plugin unwraps that envelope in its
+ * `beforeSpecParse` hook.
+ *
+ * `apiKey` and `collectionId` are both required — the plugin throws a clear error
+ * when either is missing.
+ *
+ * @param options - `{ apiKey, collectionId }`
+ * @param options.apiKey - Postman API key used to read the collection
+ * @param options.collectionId - The uid of the Postman collection
+ *
+ * @example
+ * ```ts
+ * import { postman, alovaGlobals } from 'wormajs/plugin';
+ *
+ * defineConfig({
+ *   generator: [{
+ *     plugins: [
+ *       postman({
+ *         apiKey: 'PMAK-xxx',
+ *         collectionId: '12345678-a1b2-c3d4-e5f6-7890abcdef12',
+ *       }),
+ *       alovaGlobals(),
+ *     ],
+ *     output: './src/api',
+ *   }]
+ * });
+ * ```
+ */
+export declare function postman({ apiKey, collectionId }: PostmanOptions): ApiPlugin;
+/**
+ * Rename style options
+ */
+export type RenameStyle = "camelCase" | "kebabCase" | "snakeCase" | "pascalCase";
+/**
+ * Rename plugin configuration
+ */
+export interface RenameConfig {
+	/**
+	 * Target scope for renaming, defaults to 'url'
+	 */
+	scope?: "url" | "params" | "pathParams" | "data" | "response" | "refName" | "name";
+	/**
+	 * API path filter. When set, this config only takes effect on descriptors
+	 * whose `url` matches the rule; otherwise the descriptor is returned unchanged.
+	 * The rule can be a string (substring match), RegExp, or (url: string) => boolean.
+	 */
+	path?: string | RegExp | ((url: string) => boolean);
+	/**
+	 * Matching rule for selective renaming:
+	 * - string: target contains this string
+	 * - RegExp: target matches this pattern
+	 * - function: custom matching logic
+	 * If not specified, all targets will be processed
+	 */
+	match?: string | RegExp | ((key: string, level?: number) => boolean);
+	/**
+	 * Naming style to apply
+	 */
+	style?: RenameStyle;
+	/**
+	 * Custom transformation function
+	 * Will be applied before style transformation
+	 */
+	transform?: (apiDescriptor: ApiDescriptor, value: string) => string;
+}
+/**
+ * Creates a rename plugin that transforms API descriptors
+ * according to specified naming rules
+ */
+export declare function rename(config: RenameConfig | RenameConfig[]): ApiPlugin;
+/**
+ * Tag modifier handler function type
+ * Receives a tag string and returns the modified tag string, or null/undefined/void to remove the tag
+ */
+export type ModifierHandler = (tag: string) => string | null | undefined | void;
+/**
+ * Processes tags in the API descriptor
+ * @param apiDescriptor The API descriptor
+ * @param handler Tag modifier handler function
+ * @returns Modified API descriptor
+ */
+export declare function processApiTags(apiDescriptor: ApiDescriptor, handler: ModifierHandler): ApiDescriptor;
+/**
+ * Creates a tag modifier plugin
+ *
+ * @param handler Tag modifier handler function that receives a tag string and returns modified tag or null/undefined/void to remove the tag
+ * @returns API plugin instance
+ *
+ * @example
+ * ```ts
+ * // Convert all tags to uppercase
+ * const upperCasePlugin = tagModifier(tag => tag.toUpperCase());
+ *
+ * // Add prefix to tags
+ * const prefixPlugin = tagModifier(tag => `api-${tag}`);
+ *
+ * // Remove specific tags
+ * const filterPlugin = tagModifier(tag => tag === 'internal' ? null : tag);
+ *
+ * // Use the plugin
+ * export default {
+ *   generator: [{
+ *     // ...other config
+ *     plugins: [upperCasePlugin]
+ *   }]
+ * };
+ * ```
+ */
+export declare function tagModifier(handler: ModifierHandler): ApiPlugin;
+/**
+ * worma.config template preset - plugin mode
+ */
+export declare function config(): ApiPlugin;
+/**
+ * globals template preset - plugin mode
+ * Global template: an existing global template, used via global mounting
+ */
+export declare function alovaGlobals(opts?: GlobalsTemplateOptions): ApiPlugin;
+/**
+ * functional template preset - plugin mode
+ * Functional template that generates functional API calls, supports tree-shaking, only for alova v3
+ */
+export declare function alova(opts?: FunctionalTemplateOptions): ApiPlugin;
+/**
+ * axios template preset - plugin mode
+ * Axios-related template
+ */
+export declare function axios(opts?: RequestLibTemplateOptions): ApiPlugin;
+/**
+ * fetch template preset - plugin mode
+ * Fetch-related template
+ */
+declare function fetch$1(opts?: RequestLibTemplateOptions): ApiPlugin;
+/**
+ * ky template preset - plugin mode
+ * Ky-related template
+ */
+export declare function ky(opts?: RequestLibTemplateOptions): ApiPlugin;
+
+export {
+	fetch$1 as fetch,
+};
+
+export {};

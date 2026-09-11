@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "moduleResolution": "bundler",
+    "paths": {
+      "@/*": ["./ext/*"],
+      "#/*": ["./typings/*"],
+      "~/*": ["./src/*"]
+    },
+    "types": ["./typings/index.d.ts", "./ext/env.d.ts"],
+    "noUnusedLocals": false
+  },
+  "include": ["./ext/**/*", "./src/**/*", "vite.config.ts", "./typings/*"]
+}

@@ -1,0 +1,38 @@
+{{> comment}}
+import { alovaInstance } from '../index';
+import { buildPayload, resolveTagDefaultConfig } from '../helper';
+import * as defaultConfig from '.';
+import type { Alova2Method, Alova2MethodConfig } from '../typed';
+import type * as ComponentTypes from '../components';
+
+const {{{currentTag.tag}}}DefaultConfig = resolveTagDefaultConfig(defaultConfig, '{{{currentTag.tag}}}DefaultConfig');
+
+{{> extract-responded}}
+{{#each currentTag.apis}}
+
+export type {{{name}}}Response = {{addNamespace response @root.componentNames}};
+{{#if pathParameters}}export type {{{name}}}PathParams = {{addNamespace pathParameters @root.componentNames}};
+{{/if}}{{#if queryParameters}}export type {{{name}}}Params = {{addNamespace queryParameters @root.componentNames}};
+{{/if}}{{#if requestBody}}export type {{{name}}}Data = {{addNamespace requestBody @root.componentNames}};
+{{/if}}
+export interface {{{name}}}ExtraConfig {
+  {{#if pathParameters}}pathParams: {{{name}}}PathParams;
+  {{/if}}{{#if queryParameters}}params: {{{name}}}Params;
+  {{/if}}{{#if requestBody}}data: {{{name}}}Data;
+  {{/if}}
+}
+{{> api-jsdoc}}
+export function {{{name}}}<Config extends Alova2MethodConfig<{{{name}}}Response> & {{{name}}}ExtraConfig>(config{{#or pathParameters queryParameters requestBody }}{{else}}?{{/or}}: Config): Alova2Method<ExtractResponded<Config, '{{{name}}}', {{{name}}}Response>> {
+  const { url, data, mergedConfig } = buildPayload('{{{path}}}', {{../currentTag.tag}}DefaultConfig, {{{name}}}.name, config);
+  return alovaInstance.Request<ExtractResponded<Config, '{{{name}}}', {{{name}}}Response>>({
+    ...mergedConfig,
+    url,
+    data,
+    method: '{{method}}',{{#if (eq response "Blob")}}
+    meta: {
+      blob: true
+    }{{/if}}
+  });
+}
+
+{{/each}}

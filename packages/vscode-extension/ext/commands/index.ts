@@ -1,0 +1,32 @@
+import auto, { autocomplete } from './autocomplete'
+import changes, { openChanges } from './changes'
+import codeLen from './codeLen'
+import codeSnippet, { helpeSnippet, insertSnippet, openSnippet } from './codeSnippet'
+import docs, { openDocs, refreshDocs } from './docs'
+import generate, { createConfig, generateApi, generateApiForce, refresh } from './generate'
+import statusBar, { showStatusBarIcon } from './statusBar'
+import statusBarActions, { showStatusBarActions } from './statusBarActions'
+
+export * from './commands'
+export const commandsMap = {
+  autocomplete,
+  generateApi,
+  generateApiForce,
+  refresh,
+  createConfig,
+  showStatusBarIcon,
+  showStatusBarActions,
+  openChanges,
+  openDocs,
+  refreshDocs,
+  helpeSnippet,
+  insertSnippet,
+  openSnippet,
+}
+export const commands = Object.values(commandsMap)
+export type CommandKey = keyof typeof commandsMap
+const m: ExtensionModule = function (ctx) {
+  return [auto(ctx), docs(ctx), generate(ctx), statusBar(ctx), statusBarActions(ctx), changes(ctx), codeSnippet(ctx), codeLen(ctx)].flat()
+}
+
+export default m

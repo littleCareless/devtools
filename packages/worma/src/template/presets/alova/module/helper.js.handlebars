@@ -1,0 +1,37 @@
+{{> comment}}
+
+export function buildPayload(url, defaultConfig, apiName, config) {
+{{> build-payload-body}}
+}
+
+/**
+ * @typedef {{#raw "{{" }}{{/raw}}
+{{#each tagedApis}}
+ *  {{{tag}}}: typeof import('./services/{{{tag}}}')
+{{/each}}
+ * {{#raw "}}" }}{{/raw}} ServicesMap
+ */
+
+/**
+ * @template {keyof ServicesMap} T
+ * @template {Record<string, (config: any) => any>} [TagedMap = ServicesMap[T]]
+ * @template [ConfigMap = { [K in keyof TagedMap]?: Partial<Parameters<TagedMap[K]>[0]> }]
+ * @param {T} _
+ * @param {ConfigMap} configMap
+ * @returns {ConfigMap}
+ */
+export function setMethodDefaultConfig(_, configMap) {
+  return configMap;
+}
+
+/**
+ * @template {object} C
+ * @template {string} Key
+ * @param {C} defaultConfig
+ * @param {Key} tagName
+ * @returns {C extends { [K in Key]: infer V } ? V : {}}
+ */
+export function resolveTagDefaultConfig(defaultConfig, tagName) {
+  const raw = defaultConfig[tagName];
+  return raw || {};
+}

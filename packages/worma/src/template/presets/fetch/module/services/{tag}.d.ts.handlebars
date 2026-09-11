@@ -1,0 +1,8 @@
+import type * as ComponentTypes from '../components';
+
+{{#each currentTag.apis}}
+{{> dts-types}}
+{{> api-jsdoc}}
+{{> dts-fn-declare}}
+
+{{/each}}

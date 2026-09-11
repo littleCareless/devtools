@@ -1,0 +1,6 @@
+{{> comment}}
+import { setMethodDefaultConfig } from '../helper.js';
+
+{{#each tagedApis}}
+export const {{{tag}}}DefaultConfig = setMethodDefaultConfig('{{{tag}}}', {});
+{{/each}}
